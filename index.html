@@ -1,0 +1,1488 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <title>疲勞駕駛偵測系統 - 數據記錄版</title>
+  
+  <!-- 使用穩定版本的庫 -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/p5.min.js"></script>
+  <script src="https://unpkg.com/ml5@0.12.2/dist/ml5.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+  <!-- 加入 SheetJS 用於 Excel 導出 -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: 'Arial', 'Microsoft JhengHei', sans-serif;
+      text-align: center;
+      margin: 0;
+      padding: 20px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      min-height: 100vh;
+    }
+    
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 20px;
+      padding: 30px;
+      backdrop-filter: blur(10px);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+    }
+    
+    h1 {
+      font-size: 2.5em;
+      margin-bottom: 30px;
+      text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+    }
+    
+    .status-panel {
+      display: flex;
+      justify-content: space-around;
+      margin-bottom: 30px;
+      flex-wrap: wrap;
+      gap: 20px;
+    }
+    
+    .status-card {
+      background: rgba(255, 255, 255, 0.2);
+      border-radius: 15px;
+      padding: 20px;
+      min-width: 250px;
+      flex: 1;
+      backdrop-filter: blur(5px);
+      transition: all 0.3s ease;
+      border: 2px solid transparent;
+    }
+    
+    .status-card.alert-warning {
+      background: rgba(255, 87, 34, 0.3);
+      border-color: #ff5722;
+      animation: pulse 1s infinite;
+    }
+    
+    .status-card.alert-normal {
+      background: rgba(76, 175, 80, 0.3);
+      border-color: #4caf50;
+    }
+    
+    @keyframes pulse {
+      0% { transform: scale(1); }
+      50% { transform: scale(1.02); }
+      100% { transform: scale(1); }
+    }
+    
+    #label {
+      font-size: 1.8em;
+      font-weight: bold;
+      margin-bottom: 10px;
+    }
+    
+    #confidence {
+      font-size: 1.2em;
+      opacity: 0.9;
+    }
+    
+    .model-input-section {
+      margin: 20px 0;
+      padding: 20px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 15px;
+    }
+
+    .model-input {
+      width: 80%;
+      max-width: 500px;
+      padding: 12px;
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.1);
+      color: white;
+      font-size: 16px;
+      margin: 10px;
+    }
+
+    .model-input::placeholder {
+      color: rgba(255, 255, 255, 0.7);
+    }
+    
+    .video-section {
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      gap: 30px;
+      margin-bottom: 30px;
+      flex-wrap: wrap;
+    }
+    
+    #videoCanvas {
+      border: 3px solid rgba(255, 255, 255, 0.3);
+      border-radius: 15px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+      background: rgba(0, 0, 0, 0.5);
+    }
+    
+    .chart-container {
+      background: rgba(255, 255, 255, 0.9);
+      border-radius: 15px;
+      padding: 20px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+      min-width: 400px;
+    }
+    
+    .controls {
+      margin-top: 20px;
+      display: flex;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    
+    button {
+      background: linear-gradient(45deg, #ff6b6b, #feca57);
+      border: none;
+      padding: 12px 25px;
+      font-size: 16px;
+      color: white;
+      border-radius: 25px;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+      min-width: 120px;
+    }
+    
+    button:hover:not(:disabled) {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+    }
+    
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none;
+    }
+    
+    .download-btn {
+      background: linear-gradient(45deg, #4caf50, #45a049);
+    }
+    
+    .stats {
+      display: flex;
+      justify-content: space-around;
+      margin-top: 30px;
+      flex-wrap: wrap;
+      gap: 20px;
+    }
+    
+    .stat-item {
+      text-align: center;
+      background: rgba(255, 255, 255, 0.1);
+      padding: 20px;
+      border-radius: 15px;
+      min-width: 150px;
+      flex: 1;
+    }
+    
+    .stat-number {
+      font-size: 2.5em;
+      font-weight: bold;
+      color: #feca57;
+      margin-bottom: 5px;
+    }
+    
+    .stat-label {
+      font-size: 0.9em;
+      opacity: 0.8;
+    }
+    
+    .data-section {
+      margin-top: 30px;
+      padding: 20px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 15px;
+    }
+    
+    .data-table-container {
+      max-height: 300px;
+      overflow-y: auto;
+      margin-top: 20px;
+      background: rgba(255, 255, 255, 0.9);
+      border-radius: 10px;
+      padding: 15px;
+    }
+    
+    .data-table {
+      width: 100%;
+      border-collapse: collapse;
+      color: #333;
+      font-size: 14px;
+    }
+    
+    .data-table th,
+    .data-table td {
+      padding: 8px 12px;
+      text-align: left;
+      border-bottom: 1px solid #ddd;
+    }
+    
+    .data-table th {
+      background-color: #f2f2f2;
+      font-weight: bold;
+      position: sticky;
+      top: 0;
+    }
+    
+    .data-table tr:nth-child(even) {
+      background-color: #f9f9f9;
+    }
+    
+    .data-table tr:hover {
+      background-color: #f5f5f5;
+    }
+    
+    .warning-row {
+      background-color: #ffebee !important;
+    }
+    
+    .normal-row {
+      background-color: #e8f5e8 !important;
+    }
+    
+    .message-container {
+      margin: 20px 0;
+    }
+    
+    .error-message {
+      background: rgba(255, 0, 0, 0.2);
+      border: 2px solid #ff0000;
+      border-radius: 10px;
+      padding: 15px;
+      margin: 10px 0;
+      color: #ffcccc;
+    }
+    
+    .success-message {
+      background: rgba(76, 175, 80, 0.2);
+      border: 2px solid #4caf50;
+      border-radius: 10px;
+      padding: 15px;
+      margin: 10px 0;
+      color: #ccffcc;
+    }
+    
+    .info-message {
+      background: rgba(33, 150, 243, 0.2);
+      border: 2px solid #2196f3;
+      border-radius: 10px;
+      padding: 15px;
+      margin: 10px 0;
+      color: #cce7ff;
+    }
+    
+    .debug-info {
+      background: rgba(0, 0, 0, 0.3);
+      border-radius: 10px;
+      padding: 15px;
+      margin-top: 20px;
+      font-family: monospace;
+      font-size: 12px;
+      text-align: left;
+      color: #ccc;
+      max-height: 200px;
+      overflow-y: auto;
+    }
+    
+    .system-status {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 10px;
+      margin: 20px 0;
+      padding: 15px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 10px;
+    }
+    
+    .status-indicator {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: #ff0000;
+    }
+    
+    .status-indicator.ready {
+      background: #4caf50;
+    }
+    
+    .status-indicator.loading {
+      background: #ffc107;
+      animation: blink 1s infinite;
+    }
+    
+    @keyframes blink {
+      0%, 50% { opacity: 1; }
+      51%, 100% { opacity: 0.3; }
+    }
+    
+    .session-info {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+      padding: 15px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 10px;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    
+    .session-info span {
+      font-size: 14px;
+      opacity: 0.9;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🚗 智能疲勞駕駛偵測系統</h1>
+    
+    <div class="system-status">
+      <div class="status-indicator" id="systemIndicator"></div>
+      <span id="systemStatus">系統準備中...</span>
+    </div>
+    
+    <div class="session-info">
+      <span>📅 開始時間：<span id="sessionStartTime">--</span></span>
+      <span>⏱️ 運行時間：<span id="sessionDuration">00:00:00</span></span>
+      <span>📊 記錄數量：<span id="recordCount">0</span></span>
+    </div>
+    
+    <div class="model-input-section">
+      <h3>📋 模型設定</h3>
+      <input type="text" id="modelUrlInput" class="model-input" 
+             placeholder="請輸入 Teachable Machine 模型 URL"
+             value="https://teachablemachine.withgoogle.com/models/Si9BFwEvA/">
+      <br>
+      <button onclick="updateModelUrl()">🔄 更新模型</button>
+      <button onclick="useBuiltinModel()">🏠 使用內建模型</button>
+    </div>
+    
+    <div class="status-panel">
+      <div class="status-card" id="statusCard1">
+        <div id="label">狀態：系統準備中...</div>
+        <div id="confidence">信心值：0%</div>
+      </div>
+      <div class="status-card" id="statusCard2">
+        <div id="detectionResults">前3名預測：<br>等待初始化...</div>
+      </div>
+    </div>
+    
+    <div class="message-container" id="messageContainer"></div>
+    
+    <div class="video-section">
+      <div id="videoCanvas"></div>
+      <div class="chart-container">
+        <canvas id="confidenceChart" width="400" height="250"></canvas>
+      </div>
+    </div>
+    
+    <div class="controls">
+      <button id="initBtn" onclick="initializeSystem()">🚀 初始化系統</button>
+      <button id="retryBtn" onclick="retryInitialization()" style="display:none;">🔄 重新初始化</button>
+      <button id="testBtn" onclick="enableTestMode()">🧪 測試模式</button>
+      <button id="toggleBtn" onclick="toggleClassification()" disabled>⏸️ 暫停偵測</button>
+      <button id="resetBtn" onclick="resetStats()">🔄 重置統計</button>
+    </div>
+    
+    <div class="stats">
+      <div class="stat-item">
+        <div class="stat-number" id="normalCount">0</div>
+        <div class="stat-label">正常駕駛次數</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-number" id="warningCount">0</div>
+        <div class="stat-label">警告次數</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-number" id="totalDetections">0</div>
+        <div class="stat-label">總偵測次數</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-number" id="accuracyRate">0%</div>
+        <div class="stat-label">檢測準確率</div>
+      </div>
+    </div>
+    
+    <!-- 數據記錄區域 -->
+    <div class="data-section">
+      <h3>📊 數據記錄與分析</h3>
+      <div class="controls">
+        <button class="download-btn" onclick="downloadExcel()">📥 下載 Excel</button>
+        <button class="download-btn" onclick="downloadCSV()">📄 下載 CSV</button>
+        <button onclick="clearDataRecords()">🗑️ 清除記錄</button>
+        <button onclick="exportSummaryReport()">📋 匯出報告</button>
+      </div>
+      
+      <div class="data-table-container">
+        <table class="data-table" id="dataTable">
+          <thead>
+            <tr>
+              <th>時間</th>
+              <th>狀態</th>
+              <th>信心度</th>
+              <th>第二預測</th>
+              <th>第三預測</th>
+              <th>風險等級</th>
+              <th>備註</th>
+            </tr>
+          </thead>
+          <tbody id="dataTableBody">
+            <!-- 數據將動態插入這裡 -->
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="debug-info" id="debugInfo">
+      <div><strong>🔍 系統調試信息：</strong></div>
+      <div id="debugLog">系統啟動中...</div>
+    </div>
+  </div>
+
+  <script>
+    // ==================== 全域變數 ====================
+    let video = null;
+    let classifier = null;
+    let label = "系統準備中...";
+    let confidence = 0;
+    let modelURL = "https://teachablemachine.withgoogle.com/models/Si9BFwEvA/";
+    
+    // 系統狀態
+    let systemReady = false;
+    let testMode = false;
+    let classificationPaused = false;
+    let initializationInProgress = false;
+    let videoReady = false;
+    let modelLoaded = false;
+    
+    // 音頻相關
+    let isSpeaking = false;
+    let audioCtx = null;
+    
+    // 圖表與數據
+    let chart = null;
+    let maxDataPoints = 50;
+    
+    // 統計數據
+    let normalCount = 0;
+    let warningCount = 0;
+    let totalDetections = 0;
+    let correctDetections = 0;
+    
+    // 數據記錄
+    let dataRecords = [];
+    let sessionStartTime = null;
+    let sessionTimer = null;
+    
+    // 內建簡單模型（用於測試）
+    const builtinModel = {
+      labels: ['Normal', 'Tired', 'Drowsy'],
+      predict: function() {
+        const random = Math.random();
+        if (random < 0.7) {
+          return [
+            { label: 'Normal', confidence: 0.8 + Math.random() * 0.2 },
+            { label: 'Tired', confidence: 0.1 + Math.random() * 0.1 },
+            { label: 'Drowsy', confidence: 0.05 + Math.random() * 0.05 }
+          ];
+        } else if (random < 0.9) {
+          return [
+            { label: 'Tired', confidence: 0.7 + Math.random() * 0.2 },
+            { label: 'Normal', confidence: 0.2 + Math.random() * 0.1 },
+            { label: 'Drowsy', confidence: 0.05 + Math.random() * 0.05 }
+          ];
+        } else {
+          return [
+            { label: 'Drowsy', confidence: 0.8 + Math.random() * 0.2 },
+            { label: 'Tired', confidence: 0.1 + Math.random() * 0.1 },
+            { label: 'Normal', confidence: 0.05 + Math.random() * 0.05 }
+          ];
+        }
+      }
+    };
+
+    // ==================== 數據記錄功能 ====================
+    
+    // 開始會話
+    function startSession() {
+      sessionStartTime = new Date();
+      document.getElementById('sessionStartTime').textContent = sessionStartTime.toLocaleString();
+      
+      // 開始計時器
+      sessionTimer = setInterval(updateSessionDuration, 1000);
+      
+      debugLog('會話開始: ' + sessionStartTime.toLocaleString());
+    }
+    
+    // 更新會話持續時間
+    function updateSessionDuration() {
+      if (!sessionStartTime) return;
+      
+      const now = new Date();
+      const duration = now - sessionStartTime;
+      const hours = Math.floor(duration / 3600000);
+      const minutes = Math.floor((duration % 3600000) / 60000);
+      const seconds = Math.floor((duration % 60000) / 1000);
+      
+      const durationStr = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+      document.getElementById('sessionDuration').textContent = durationStr;
+    }
+    
+    // 添加數據記錄
+    function addDataRecord(results) {
+      const now = new Date();
+      const topResult = results[0];
+      const secondResult = results[1] || { label: 'N/A', confidence: 0 };
+      const thirdResult = results[2] || { label: 'N/A', confidence: 0 };
+      
+      // 判斷風險等級
+      let riskLevel = '低';
+      let remarks = '';
+      
+      const fatigueKeywords = ['tired', 'drowsy', 'sleepy', '疲勞', '打瞌睡'];
+      const isFatigue = fatigueKeywords.some(keyword => 
+        topResult.label.toLowerCase().includes(keyword)
+      );
+      
+      if (isFatigue && topResult.confidence > 0.8) {
+        riskLevel = '高';
+        remarks = '高度疲勞警告';
+      } else if (isFatigue && topResult.confidence > 0.6) {
+        riskLevel = '中';
+        remarks = '疲勞徵象';
+      } else if (topResult.confidence < 0.5) {
+        riskLevel = '未知';
+        remarks = '檢測不確定';
+      }
+      
+      const record = {
+        timestamp: now,
+        timeString: now.toLocaleString(),
+        status: topResult.label,
+        confidence: topResult.confidence,
+        secondPrediction: `${secondResult.label} (${(secondResult.confidence * 100).toFixed(1)}%)`,
+        thirdPrediction: `${thirdResult.label} (${(thirdResult.confidence * 100).toFixed(1)}%)`,
+        riskLevel: riskLevel,
+        remarks: remarks,
+        isFatigue: isFatigue
+      };
+      
+      dataRecords.push(record);
+      
+      // 限制記錄數量（保留最近1000條）
+      if (dataRecords.length > 1000) {
+        dataRecords = dataRecords.slice(-1000);
+      }
+      
+      // 更新表格顯示
+      updateDataTable();
+      
+      // 更新記錄計數
+      document.getElementById('recordCount').textContent = dataRecords.length;
+    }
+    
+    // 更新數據表格
+    function updateDataTable() {
+      const tableBody = document.getElementById('dataTableBody');
+      if (!tableBody) return;
+      
+      // 只顯示最近50條記錄
+      const recentRecords = dataRecords.slice(-50).reverse();
+      
+      tableBody.innerHTML = recentRecords.map(record => {
+        const rowClass = record.isFatigue ? 'warning-row' : 'normal-row';
+        return `
+          <tr class="${rowClass}">
+            <td>${record.timeString}</td>
+            <td>${record.status}</td>
+            <td>${(record.confidence * 100).toFixed(1)}%</td>
+            <td>${record.secondPrediction}</td>
+            <td>${record.thirdPrediction}</td>
+            <td>${record.riskLevel}</td>
+            <td>${record.remarks}</td>
+          </tr>
+        `;
+      }).join('');
+    }
+    
+    // 下載 Excel 文件
+    function downloadExcel() {
+      if (dataRecords.length === 0) {
+        showMessage('❌ 沒有數據可以下載', 'error', true);
+        return;
+      }
+      
+      try {
+        // 準備數據
+        const excelData = dataRecords.map(record => ({
+          '時間': record.timeString,
+          '狀態': record.status,
+          '信心度': `${(record.confidence * 100).toFixed(2)}%`,
+          '第二預測': record.secondPrediction,
+          '第三預測': record.thirdPrediction,
+          '風險等級': record.riskLevel,
+          '備註': record.remarks
+        }));
+        
+        // 創建工作簿
+        const wb = XLSX.utils.book_new();
+        
+        // 主數據工作表
+        const ws = XLSX.utils.json_to_sheet(excelData);
+        XLSX.utils.book_append_sheet(wb, ws, '檢測記錄');
+        
+        // 統計摘要工作表
+        const summaryData = generateSummaryData();
+        const summaryWs = XLSX.utils.json_to_sheet(summaryData);
+        XLSX.utils.book_append_sheet(wb, summaryWs, '統計摘要');
+        
+        // 生成文件名
+        const fileName = `疲勞駕駛檢測記錄_${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.xlsx`;
+        
+        // 下載文件
+        XLSX.writeFile(wb, fileName);
+        
+        showMessage('✅ Excel 文件下載成功', 'success', true);
+        debugLog('Excel 文件已下載: ' + fileName);
+        
+      } catch (error) {
+        debugLog('Excel 下載失敗: ' + error.message);
+        showMessage('❌ Excel 下載失敗: ' + error.message, 'error', true);
+      }
+    }
+    
+    // 下載 CSV 文件
+    function downloadCSV() {
+      if (dataRecords.length === 0) {
+        showMessage('❌ 沒有數據可以下載', 'error', true);
+        return;
+      }
+      
+      try {
+        // 準備 CSV 數據
+        const csvHeader = '時間,狀態,信心度,第二預測,第三預測,風險等級,備註\n';
+        const csvData = dataRecords.map(record => 
+          `"${record.timeString}","${record.status}","${(record.confidence * 100).toFixed(2)}%","${record.secondPrediction}","${record.thirdPrediction}","${record.riskLevel}","${record.remarks}"`
+        ).join('\n');
+        
+        const csvContent = csvHeader + csvData;
+        
+        // 創建下載鏈接
+        const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement('a');
+        const fileName = `疲勞駕駛檢測記錄_${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.csv`;
+        
+        link.href = URL.createObjectURL(blob);
+        link.download = fileName;
+        link.click();
+        
+        showMessage('✅ CSV 文件下載成功', 'success', true);
+        debugLog('CSV 文件已下載: ' + fileName);
+        
+      } catch (error) {
+        debugLog('CSV 下載失敗: ' + error.message);
+        showMessage('❌ CSV 下載失敗: ' + error.message, 'error', true);
+      }
+    }
+    
+    // 生成統計摘要數據
+    function generateSummaryData() {
+      const now = new Date();
+      const sessionDuration = sessionStartTime ? (now - sessionStartTime) / 1000 / 60 : 0; // 分鐘
+      
+      const fatigueRecords = dataRecords.filter(r => r.isFatigue);
+      const highRiskRecords = dataRecords.filter(r => r.riskLevel === '高');
+      const mediumRiskRecords = dataRecords.filter(r => r.riskLevel === '中');
+      
+      const avgConfidence = dataRecords.length > 0 ? 
+        dataRecords.reduce((sum, r) => sum + r.confidence, 0) / dataRecords.length : 0;
+      
+      return [
+        { '統計項目': '會話開始時間', '數值': sessionStartTime ? sessionStartTime.toLocaleString() : 'N/A' },
+        { '統計項目': '會話持續時間（分鐘）', '數值': sessionDuration.toFixed(1) },
+        { '統計項目': '總檢測次數', '數值': dataRecords.length },
+        { '統計項目': '正常狀態次數', '數值': normalCount },
+        { '統計項目': '疲勞警告次數', '數值': warningCount },
+        { '統計項目': '高風險次數', '數值': highRiskRecords.length },
+        { '統計項目': '中風險次數', '數值': mediumRiskRecords.length },
+        { '統計項目': '疲勞檢出率', '數值': `${((fatigueRecords.length / Math.max(dataRecords.length, 1)) * 100).toFixed(2)}%` },
+        { '統計項目': '平均檢測信心度', '數值': `${(avgConfidence * 100).toFixed(2)}%` },
+        { '統計項目': '報告生成時間', '數值': now.toLocaleString() }
+      ];
+    }
+    
+    // 匯出摘要報告
+    function exportSummaryReport() {
+      if (dataRecords.length === 0) {
+        showMessage('❌ 沒有數據可以匯出', 'error', true);
+        return;
+      }
+      
+      try {
+        const summaryData = generateSummaryData();
+        const wb = XLSX.utils.book_new();
+        const ws = XLSX.utils.json_to_sheet(summaryData);
+        XLSX.utils.book_append_sheet(wb, ws, '摘要報告');
+        
+        const fileName = `疲勞駕駛檢測摘要報告_${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.xlsx`;
+        XLSX.writeFile(wb, fileName);
+        
+        showMessage('✅ 摘要報告匯出成功', 'success', true);
+        debugLog('摘要報告已匯出: ' + fileName);
+        
+      } catch (error) {
+        debugLog('摘要報告匯出失敗: ' + error.message);
+        showMessage('❌ 摘要報告匯出失敗: ' + error.message, 'error', true);
+      }
+    }
+    
+    // 清除數據記錄
+    function clearDataRecords() {
+      if (confirm('確定要清除所有數據記錄嗎？此操作無法復原。')) {
+        dataRecords = [];
+        updateDataTable();
+        document.getElementById('recordCount').textContent = '0';
+        showMessage('✅ 數據記錄已清除', 'success', true);
+        debugLog('數據記錄已清除');
+      }
+    }
+
+    // ==================== 工具函數 ====================
+    
+    // 安全的調試日誌
+    function debugLog(message) {
+      const timestamp = new Date().toLocaleTimeString();
+      const logMessage = `${timestamp}: ${message}`;
+      
+      console.log(logMessage);
+      
+      try {
+        const debugElement = document.getElementById('debugLog');
+        if (debugElement) {
+          debugElement.innerHTML += `<br>${logMessage}`;
+          debugElement.scrollTop = debugElement.scrollHeight;
+          
+          // 限制日誌條數
+          const lines = debugElement.innerHTML.split('<br>');
+          if (lines.length > 100) {
+            debugElement.innerHTML = lines.slice(-80).join('<br>');
+          }
+        }
+      } catch (error) {
+        console.error('調試日誌顯示錯誤:', error);
+      }
+    }
+    
+    // 更新系統狀態指示器
+    function updateSystemStatus(status, message) {
+      const indicator = document.getElementById('systemIndicator');
+      const statusText = document.getElementById('systemStatus');
+      
+      if (indicator && statusText) {
+        indicator.className = `status-indicator ${status}`;
+        statusText.textContent = message;
+      }
+    }
+    
+    // 顯示訊息
+    function showMessage(message, type = 'info', autoHide = false) {
+      const messageContainer = document.getElementById('messageContainer');
+      if (!messageContainer) return;
+      
+      const className = `${type}-message`;
+      messageContainer.innerHTML = `
+        <div class="${className}">
+          ${message}
+        </div>
+      `;
+      
+      if (autoHide) {
+        setTimeout(() => {
+          messageContainer.innerHTML = '';
+        }, 5000);
+      }
+    }
+    
+    // 安全的元素更新
+    function safeUpdateElement(id, content) {
+      try {
+        const element = document.getElementById(id);
+        if (element) {
+          element.textContent = content;
+        }
+      } catch (error) {
+        debugLog(`更新元素 ${id} 失敗: ${error.message}`);
+      }
+    }
+    
+    // 檢查依賴項
+    function checkDependencies() {
+      const deps = {
+        p5: typeof p5 !== 'undefined',
+        ml5: typeof ml5 !== 'undefined',
+        Chart: typeof Chart !== 'undefined',
+        XLSX: typeof XLSX !== 'undefined'
+      };
+      
+      debugLog(`依賴檢查 - p5: ${deps.p5}, ml5: ${deps.ml5}, Chart: ${deps.Chart}, XLSX: ${deps.XLSX}`);
+      return deps;
+    }
+    
+    // ==================== 圖表功能 ====================
+    
+    function initializeChart() {
+      try {
+        const ctx = document.getElementById('confidenceChart');
+        if (!ctx) {
+          debugLog('找不到圖表畫布元素');
+          return;
+        }
+        
+        chart = new Chart(ctx.getContext('2d'), {
+          type: 'line',
+          data: {
+            labels: [],
+            datasets: [{
+              label: '檢測信心度',
+              data: [],
+              borderColor: 'rgb(75, 192, 192)',
+              backgroundColor: 'rgba(75, 192, 192, 0.2)',
+              tension: 0.4,
+              fill: true,
+              pointRadius: 3
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+              y: {
+                beginAtZero: true,
+                max: 1,
+                ticks: {
+                  callback: function(value) {
+                    return (value * 100).toFixed(0) + '%';
+                  }
+                }
+              },
+              x: {
+                display: false
+              }
+            },
+            plugins: {
+              title: {
+                display: true,
+                text: '疲勞檢測信心度變化',
+                color: '#333',
+                font: { size: 16 }
+              },
+              legend: {
+                labels: { color: '#333' }
+              }
+            },
+            animation: {
+              duration: 300
+            }
+          }
+        });
+        
+        debugLog('圖表初始化成功');
+      } catch (error) {
+        debugLog('圖表初始化失敗: ' + error.message);
+      }
+    }
+    
+    function updateChart(confidence) {
+      if (!chart) return;
+      
+      try {
+        const now = new Date().toLocaleTimeString();
+        
+        // 添加新數據點
+        chart.data.labels.push(now);
+        chart.data.datasets[0].data.push(confidence);
+        
+        // 限制數據點數量
+        if (chart.data.labels.length > maxDataPoints) {
+          chart.data.labels.shift();
+          chart.data.datasets[0].data.shift();
+        }
+        
+        chart.update('none');
+      } catch (error) {
+        debugLog('圖表更新失敗: ' + error.message);
+      }
+    }
+    
+    // ==================== 音頻警告功能 ====================
+    
+    function initializeAudio() {
+      try {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        debugLog('音頻上下文初始化成功');
+      } catch (error) {
+        debugLog('音頻初始化失敗: ' + error.message);
+      }
+    }
+    
+    function playWarningSound() {
+      if (!audioCtx || isSpeaking) return;
+      
+      try {
+        const oscillator = audioCtx.createOscillator();
+        const gainNode = audioCtx.createGain();
+        
+        oscillator.connect(gainNode);
+        gainNode.connect(audioCtx.destination);
+        
+        oscillator.frequency.setValueAtTime(800, audioCtx.currentTime);
+        oscillator.frequency.setValueAtTime(600, audioCtx.currentTime + 0.1);
+        oscillator.frequency.setValueAtTime(800, audioCtx.currentTime + 0.2);
+        
+        gainNode.gain.setValueAtTime(0.3, audioCtx.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
+        
+        oscillator.start(audioCtx.currentTime);
+        oscillator.stop(audioCtx.currentTime + 0.3);
+        
+        debugLog('播放警告音效');
+      } catch (error) {
+        debugLog('播放音效失敗: ' + error.message);
+      }
+    }
+    
+    function speakWarning(text) {
+      if (!('speechSynthesis' in window) || isSpeaking) return;
+      
+      try {
+        isSpeaking = true;
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.lang = 'zh-TW';
+        utterance.rate = 1.2;
+        utterance.pitch = 1.1;
+        utterance.volume = 0.8;
+        
+        utterance.onend = () => {
+          isSpeaking = false;
+        };
+        
+        utterance.onerror = () => {
+          isSpeaking = false;
+        };
+        
+        speechSynthesis.speak(utterance);
+        debugLog('語音警告: ' + text);
+      } catch (error) {
+        isSpeaking = false;
+        debugLog('語音警告失敗: ' + error.message);
+      }
+    }
+    
+    // ==================== 系統初始化 ====================
+    
+    function initializeSystem() {
+      if (initializationInProgress) {
+        debugLog('初始化已在進行中，請稍候...');
+        return;
+      }
+      
+      initializationInProgress = true;
+      updateSystemStatus('loading', '系統初始化中...');
+      
+      debugLog('開始系統初始化');
+      
+      // 檢查依賴項
+      const deps = checkDependencies();
+      if (!deps.p5 || !deps.ml5 || !deps.Chart || !deps.XLSX) {
+        const missing = Object.entries(deps)
+          .filter(([key, value]) => !value)
+          .map(([key]) => key);
+        
+        showMessage(`❌ 缺少必要依賴項: ${missing.join(', ')}`, 'error');
+        initializationInProgress = false;
+        updateSystemStatus('error', '依賴項載入失敗');
+        return;
+      }
+      
+      try {
+        // 初始化各個組件
+        initializeChart();
+        initializeAudio();
+        
+        // 開始會話
+        if (!sessionStartTime) {
+          startSession();
+        }
+        
+        // 初始化 p5.js
+        new p5(sketch);
+        
+        // 更新按鈕狀態
+        document.getElementById('initBtn').style.display = 'none';
+        document.getElementById('retryBtn').style.display = 'inline-block';
+        
+        showMessage('✅ 系統初始化成功，正在載入攝像頭...', 'success', true);
+        debugLog('系統初始化完成');
+        
+      } catch (error) {
+        debugLog('系統初始化失敗: ' + error.message);
+        showMessage('❌ 系統初始化失敗: ' + error.message, 'error');
+        initializationInProgress = false;
+        updateSystemStatus('error', '初始化失敗');
+      }
+    }
+    
+    function retryInitialization() {
+      debugLog('重新初始化系統');
+      
+      // 重置狀態
+      systemReady = false;
+      videoReady = false;
+      modelLoaded = false;
+      initializationInProgress = false;
+      
+      // 重置UI
+      document.getElementById('initBtn').style.display = 'inline-block';
+      document.getElementById('retryBtn').style.display = 'none';
+      document.getElementById('toggleBtn').disabled = true;
+      
+      // 清理現有資源
+      if (video && video.remove) {
+        video.remove();
+        video = null;
+      }
+      
+      if (classifier) {
+        classifier = null;
+      }
+      
+      // 重新初始化
+      setTimeout(() => {
+        initializeSystem();
+      }, 1000);
+    }
+    
+    // ==================== p5.js 主程序 ====================
+    
+    function sketch(p) {
+      p.setup = function() {
+        debugLog('p5.js setup 開始');
+        
+        try {
+          // 創建畫布
+          const canvas = p.createCanvas(640, 480);
+          canvas.parent('videoCanvas');
+          
+          // 初始化攝像頭
+          video = p.createCapture(p.VIDEO, videoReady);
+          video.size(640, 480);
+          video.hide();
+          
+          debugLog('p5.js 畫布和攝像頭創建完成');
+          
+        } catch (error) {
+          debugLog('p5.js setup 失敗: ' + error.message);
+          showMessage('❌ 攝像頭初始化失敗: ' + error.message, 'error');
+          initializationInProgress = false;
+          updateSystemStatus('error', '攝像頭初始化失敗');
+        }
+      };
+      
+      function videoReady() {
+        debugLog('攝像頭準備就緒');
+        videoReady = true;
+        
+        // 載入模型
+        loadModel();
+      }
+      
+      function loadModel() {
+        debugLog('開始載入模型: ' + modelURL);
+        updateSystemStatus('loading', '載入AI模型中...');
+        
+        try {
+          if (testMode) {
+            // 使用內建測試模型
+            classifier = builtinModel;
+            modelLoaded = true;
+            onModelReady();
+          } else {
+            // 載入 Teachable Machine 模型
+            classifier = ml5.imageClassifier(modelURL + 'model.json', onModelReady);
+          }
+        } catch (error) {
+          debugLog('模型載入失敗: ' + error.message);
+          showMessage('❌ 模型載入失敗: ' + error.message, 'error');
+          initializationInProgress = false;
+          updateSystemStatus('error', '模型載入失敗');
+        }
+      }
+      
+      function onModelReady() {
+        debugLog('模型載入完成');
+        modelLoaded = true;
+        systemReady = true;
+        initializationInProgress = false;
+        
+        updateSystemStatus('ready', '系統就緒');
+        showMessage('✅ 系統準備完成，開始疲勞檢測', 'success', true);
+        
+        // 啟用控制按鈕
+        document.getElementById('toggleBtn').disabled = false;
+        
+        // 開始分類
+        classifyVideo();
+      }
+      
+      p.draw = function() {
+        if (!video || !videoReady) {
+          p.background(50);
+          p.fill(255);
+          p.textAlign(p.CENTER, p.CENTER);
+          p.textSize(24);
+          p.text('等待攝像頭初始化...', p.width/2, p.height/2);
+          return;
+        }
+        
+        // 繪製視頻
+        p.image(video, 0, 0, 640, 480);
+        
+        // 繪製檢測框
+        p.stroke(255, 255, 0);
+        p.strokeWeight(3);
+        p.noFill();
+        p.rect(160, 120, 320, 240);
+        
+        // 顯示檢測結果
+        if (systemReady) {
+          p.fill(0, 0, 0, 150);
+          p.rect(0, 0, 640, 80);
+          
+          p.fill(255);
+          p.textAlign(p.LEFT, p.TOP);
+          p.textSize(18);
+          p.text(`狀態: ${label}`, 20, 20);
+          p.text(`信心度: ${(confidence * 100).toFixed(1)}%`, 20, 45);
+          
+          // 狀態指示燈
+          const statusColor = label.toLowerCase().includes('tired') || 
+                             label.toLowerCase().includes('drowsy') || 
+                             label.toLowerCase().includes('疲勞') ? 
+                             p.color(255, 0, 0) : p.color(0, 255, 0);
+          
+          p.fill(statusColor);
+          p.noStroke();
+          p.circle(600, 35, 30);
+        }
+        
+        // 顯示提示文字
+        if (!classificationPaused && systemReady) {
+          p.fill(255, 255, 0);
+          p.textAlign(p.CENTER, p.BOTTOM);
+          p.textSize(16);
+          p.text('請將臉部置於框內', p.width/2, p.height - 20);
+        } else if (classificationPaused) {
+          p.fill(255, 100, 100);
+          p.textAlign(p.CENTER, p.BOTTOM);
+          p.textSize(16);
+          p.text('檢測已暫停', p.width/2, p.height - 20);
+        }
+      };
+    }
+    
+    // ==================== 分類功能 ====================
+    
+    function classifyVideo() {
+      if (!systemReady || !classifier || !video || classificationPaused) {
+        return;
+      }
+      
+      try {
+        if (testMode) {
+          // 測試模式使用內建模型
+          const results = classifier.predict();
+          handleClassificationResults(results);
+        } else {
+          // 使用 ml5 模型
+          classifier.classify(video, handleClassificationResults);
+        }
+      } catch (error) {
+        debugLog('分類執行失敗: ' + error.message);
+        setTimeout(classifyVideo, 2000); // 2秒後重試
+      }
+    }
+    
+    function handleClassificationResults(results) {
+      if (!results || results.length === 0) {
+        debugLog('未收到分類結果');
+        setTimeout(classifyVideo, 1000);
+        return;
+      }
+      
+      try {
+        // 處理結果
+        const topResult = results[0];
+        label = topResult.label || topResult.className || '未知';
+        confidence = topResult.confidence || 0;
+        
+        // 更新UI
+        updateUI(results);
+        
+        // 添加數據記錄
+        addDataRecord(results);
+        
+        // 更新統計
+        updateStatistics(label, confidence);
+        
+        // 檢查是否需要警告
+        checkForWarning(label, confidence);
+        
+        // 更新圖表
+        updateChart(confidence);
+        
+        // 繼續下一次分類
+        if (!classificationPaused) {
+          setTimeout(classifyVideo, 500); // 每0.5秒檢測一次
+        }
+        
+      } catch (error) {
+        debugLog('處理分類結果失敗: ' + error.message);
+        setTimeout(classifyVideo, 1000);
+      }
+    }
+    
+    function updateUI(results) {
+      try {
+        // 更新主要狀態
+        safeUpdateElement('label', `狀態：${label}`);
+        safeUpdateElement('confidence', `信心值：${(confidence * 100).toFixed(1)}%`);
+        
+        // 更新狀態卡片樣式
+        const statusCard = document.getElementById('statusCard1');
+        if (statusCard) {
+          const fatigueKeywords = ['tired', 'drowsy', 'sleepy', '疲勞', '打瞌睡'];
+          const isFatigue = fatigueKeywords.some(keyword => 
+            label.toLowerCase().includes(keyword)
+          );
+          
+          statusCard.className = isFatigue ? 'status-card alert-warning' : 'status-card alert-normal';
+        }
+        
+        // 更新前3名預測
+        const detectionResults = document.getElementById('detectionResults');
+        if (detectionResults && results.length >= 3) {
+          const top3 = results.slice(0, 3).map((result, index) => {
+            const resultLabel = result.label || result.className || '未知';
+            const resultConfidence = ((result.confidence || 0) * 100).toFixed(1);
+            return `${index + 1}. ${resultLabel} (${resultConfidence}%)`;
+          }).join('<br>');
+          
+          detectionResults.innerHTML = `前3名預測：<br>${top3}`;
+        }
+        
+      } catch (error) {
+        debugLog('UI更新失敗: ' + error.message);
+      }
+    }
+    
+    function updateStatistics(currentLabel, currentConfidence) {
+      totalDetections++;
+      
+      const fatigueKeywords = ['tired', 'drowsy', 'sleepy', '疲勞', '打瞌睡'];
+      const isFatigue = fatigueKeywords.some(keyword => 
+        currentLabel.toLowerCase().includes(keyword)
+      );
+      
+      if (isFatigue && currentConfidence > 0.6) {
+        warningCount++;
+      } else {
+        normalCount++;
+      }
+      
+      // 計算準確率（簡化版本）
+      if (currentConfidence > 0.7) {
+        correctDetections++;
+      }
+      
+      const accuracyRate = totalDetections > 0 ? 
+        (correctDetections / totalDetections * 100).toFixed(1) : 0;
+      
+      // 更新顯示
+      safeUpdateElement('normalCount', normalCount);
+      safeUpdateElement('warningCount', warningCount);
+      safeUpdateElement('totalDetections', totalDetections);
+      safeUpdateElement('accuracyRate', accuracyRate + '%');
+    }
+    
+    function checkForWarning(currentLabel, currentConfidence) {
+      const fatigueKeywords = ['tired', 'drowsy', 'sleepy', '疲勞', '打瞌睡'];
+      const isFatigue = fatigueKeywords.some(keyword => 
+        currentLabel.toLowerCase().includes(keyword)
+      );
+      
+      if (isFatigue && currentConfidence > 0.7) {
+        playWarningSound();
+        
+        const warningMessages = [
+          '注意！檢測到疲勞駕駛',
+          '請注意休息',
+          '建議停車休息'
+        ];
+        
+        const randomMessage = warningMessages[Math.floor(Math.random() * warningMessages.length)];
+        speakWarning(randomMessage);
+        
+        debugLog(`疲勞警告: ${currentLabel} (${(currentConfidence * 100).toFixed(1)}%)`);
+      }
+    }
+    
+    // ==================== 控制功能 ====================
+    
+    function toggleClassification() {
+      classificationPaused = !classificationPaused;
+      const toggleBtn = document.getElementById('toggleBtn');
+      
+      if (classificationPaused) {
+        toggleBtn.textContent = '▶️ 恢復偵測';
+        showMessage('⏸️ 檢測已暫停', 'info', true);
+        debugLog('檢測暫停');
+      } else {
+        toggleBtn.textContent = '⏸️ 暫停偵測';
+        showMessage('▶️ 檢測已恢復', 'info', true);
+        debugLog('檢測恢復');
+        classifyVideo(); // 恢復分類
+      }
+    }
+    
+    function resetStats() {
+      if (confirm('確定要重置所有統計數據嗎？')) {
+        normalCount = 0;
+        warningCount = 0;
+        totalDetections = 0;
+        correctDetections = 0;
+        
+        safeUpdateElement('normalCount', '0');
+        safeUpdateElement('warningCount', '0');
+        safeUpdateElement('totalDetections', '0');
+        safeUpdateElement('accuracyRate', '0%');
+        
+        // 重置圖表
+        if (chart) {
+          chart.data.labels = [];
+          chart.data.datasets[0].data = [];
+          chart.update();
+        }
+        
+        showMessage('✅ 統計數據已重置', 'success', true);
+        debugLog('統計數據已重置');
+      }
+    }
+    
+    function updateModelUrl() {
+      const newUrl = document.getElementById('modelUrlInput').value.trim();
+      if (!newUrl) {
+        showMessage('❌ 請輸入有效的模型URL', 'error', true);
+        return;
+      }
+      
+      modelURL = newUrl.endsWith('/') ? newUrl : newUrl + '/';
+      testMode = false;
+      
+      showMessage('✅ 模型URL已更新，請重新初始化系統', 'success', true);
+      debugLog('模型URL更新為: ' + modelURL);
+    }
+    
+    function useBuiltinModel() {
+      testMode = true;
+      showMessage('✅ 已切換到內建測試模型', 'success', true);
+      debugLog('切換到內建測試模型');
+    }
+    
+    function enableTestMode() {
+      testMode = !testMode;
+      const testBtn = document.getElementById('testBtn');
+      
+      if (testMode) {
+        testBtn.textContent = '🏠 正常模式';
+        showMessage('🧪 測試模式已啟用', 'info', true);
+        debugLog('測試模式啟用');
+      } else {
+        testBtn.textContent = '🧪 測試模式';
+        showMessage('🏠 正常模式已啟用', 'info', true);
+        debugLog('正常模式啟用');
+      }
+    }
+    
+    // ==================== 頁面載入事件 ====================
+    
+    window.addEventListener('load', function() {
+      debugLog('頁面載入完成');
+      
+      // 檢查瀏覽器支援
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        showMessage('❌ 您的瀏覽器不支援攝像頭功能', 'error');
+        updateSystemStatus('error', '瀏覽器不支援');
+        return;
+      }
+      
+      // 檢查依賴項
+      const deps = checkDependencies();
+      if (!deps.p5 || !deps.ml5 || !deps.Chart || !deps.XLSX) {
+        showMessage('❌ 正在載入必要的程式庫，請稍候...', 'info');
+        updateSystemStatus('loading', '載入程式庫中...');
+        
+        // 等待依賴項載入
+        let checkCount = 0;
+        const checkInterval = setInterval(() => {
+          const newDeps = checkDependencies();
+          checkCount++;
+          
+          if (newDeps.p5 && newDeps.ml5 && newDeps.Chart && newDeps.XLSX) {
+            clearInterval(checkInterval);
+            showMessage('✅ 程式庫載入完成，可以開始初始化系統', 'success', true);
+            updateSystemStatus('ready', '準備就緒');
+          } else if (checkCount > 30) { // 30秒超時
+            clearInterval(checkInterval);
+            showMessage('❌ 程式庫載入超時，請重新整理頁面', 'error');
+            updateSystemStatus('error', '載入超時');
+          }
+        }, 1000);
+      } else {
+        showMessage('✅ 系統準備完成，點擊初始化按鈕開始', 'success', true);
+        updateSystemStatus('ready', '準備就緒');
+      }
+    });
+    
+    // 頁面卸載時清理資源
+    window.addEventListener('beforeunload', function() {
+      if (sessionTimer) {
+        clearInterval(sessionTimer);
+      }
+      
+      if (audioCtx) {
+        audioCtx.close();
+      }
+      
+      debugLog('頁面卸載，資源已清理');
+    });
+    
+  </script>
+</body>
+</html>
+
